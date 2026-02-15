@@ -152,15 +152,17 @@ export function ChatPage() {
     const content = lastMsg.content.trim();
 
     // Check if response looks truncated:
-    // 1. Ends with "[LANJUT]" (explicit continuation marker)
-    // 2. Ends mid-table row (line ends with | but no complete row closure)
-    // 3. Ends mid-word (last line has no sentence-ending punctuation and content is long enough)
+    // 1. Ends with "[LANJUT]" (explicit continuation marker from server)
+    // 2. Ends mid-table row (line contains | but doesn't end cleanly)
+    // 3. Ends mid-sentence (long content without sentence-ending punctuation)
+    // 4. Ends mid-list item (last line starts with - or * followed by incomplete text)
     const endsWithLanjut = content.endsWith("[LANJUT]");
     const lastLine = content.split("\n").pop() || "";
     const endsInTable = lastLine.includes("|") && !lastLine.trim().endsWith("|") && content.length > 500;
-    const isTruncatedMid = content.length > 1000 && !/[.!?\n]$/.test(content) && !content.endsWith("|");
+    const isTruncatedMid = content.length > 1000 && !/[.!?\n。）)」】]$/.test(content) && !content.endsWith("|");
+    const endsInList = content.length > 500 && /^[\s]*[-*\d]+[.)]\s/.test(lastLine) && !/[.!?。]$/.test(lastLine.trim());
 
-    const shouldContinue = endsWithLanjut || endsInTable || isTruncatedMid;
+    const shouldContinue = endsWithLanjut || endsInTable || isTruncatedMid || endsInList;
 
     if (shouldContinue) {
       // Max 5 auto-continues to prevent infinite loop

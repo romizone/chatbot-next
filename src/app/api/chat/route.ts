@@ -1,4 +1,4 @@
-import { streamText, type UIMessage, convertToModelMessages } from "ai";
+import { streamText, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -71,7 +71,34 @@ export async function POST(req: Request) {
       maxOutputTokens: maxTokens,
     });
 
-    return result.toUIMessageStreamResponse();
+    // Wrap the stream to detect finish_reason: "length" and append [LANJUT]
+    return createUIMessageStreamResponse({
+      stream: createUIMessageStream({
+        execute: async ({ writer }) => {
+          const reader = result.toUIMessageStream().getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              writer.write(value);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          // Check if response was truncated by token limit
+          const finishReason = await result.finishReason;
+          console.log("[chat] finishReason:", finishReason);
+          if (finishReason === "length") {
+            // Append continuation marker so frontend auto-continue triggers
+            writer.write({
+              type: "text-delta",
+              textDelta: "\n\n[LANJUT]",
+            });
+          }
+        },
+      }),
+    });
   } catch (error: unknown) {
     console.error("Chat API Error:", error);
     return new Response(
