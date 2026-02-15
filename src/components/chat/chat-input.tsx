@@ -66,6 +66,11 @@ export function ChatInput({
       Array.from(selectedFiles).forEach((f) => formData.append("files", f));
 
       const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        console.error("Upload failed with status:", res.status);
+        alert("Gagal mengupload file. Silakan coba lagi.");
+        return;
+      }
       const data = await res.json();
 
       if (data.files) {
@@ -73,6 +78,7 @@ export function ChatInput({
       }
     } catch (err) {
       console.error("Upload failed:", err);
+      alert("Gagal mengupload file. Periksa koneksi dan coba lagi.");
     } finally {
       setIsUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -80,7 +86,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="w-full max-w-[760px] mx-auto px-4 pb-4">
+    <div className="w-full max-w-[960px] mx-auto px-4 pb-4">
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
         <FilePreview files={files} onRemove={onRemoveFile} onClearAll={onClearFiles} />
         <div className="flex items-end gap-2 px-3 py-3">

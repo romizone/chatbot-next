@@ -29,6 +29,8 @@ export async function processFile(
   try {
     if (ext === "pdf") {
       result.text = await processPdf(buffer);
+    } else if (ext === "doc") {
+      result.text = await processDoc(buffer);
     } else if (ext === "docx") {
       result.text = await processDocx(buffer);
     } else if (ext === "xlsx" || ext === "xls") {
@@ -53,7 +55,23 @@ async function processPdf(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const pdfParse = require("pdf-parse");
   const data = await pdfParse(buffer);
-  return data.text.trim();
+  return (data.text || "").trim();
+}
+
+async function processDoc(buffer: Buffer): Promise<string> {
+  const { writeFile, unlink } = require("fs/promises");
+  const { tmpdir } = require("os");
+  const path = require("path");
+  const tmpPath = path.join(tmpdir(), `doc-${uuidv4()}.doc`);
+  try {
+    await writeFile(tmpPath, buffer);
+    const WordExtractor = require("word-extractor");
+    const extractor = new WordExtractor();
+    const doc = await extractor.extract(tmpPath);
+    return doc.getBody().trim();
+  } finally {
+    await unlink(tmpPath).catch(() => {});
+  }
 }
 
 async function processDocx(buffer: Buffer): Promise<string> {

@@ -49,7 +49,7 @@ export function Sidebar({
               <Bot className="w-5 h-5 text-white" />
             </div>
             <span className="font-semibold text-gray-900 text-sm">
-              Qwen 7B
+              Local Chatbot Qwen 7B
             </span>
           </div>
           <button

@@ -14,9 +14,12 @@ export function FileBadge({ file, onRemove }: Props) {
   const label = file.extension.toUpperCase().slice(0, 4);
 
   return (
-    <div className="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm group">
+    <div
+      className={`inline-flex items-center gap-2 bg-white border rounded-xl px-3 py-2 shadow-sm group ${file.error ? "border-red-300" : "border-gray-200"}`}
+      title={file.error || undefined}
+    >
       <div
-        className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs font-bold ${bgColor}`}
+        className={`w-9 h-9 rounded-lg flex items-center justify-center text-white text-xs font-bold ${file.error ? "bg-red-400" : bgColor}`}
       >
         {label}
       </div>
@@ -24,9 +27,9 @@ export function FileBadge({ file, onRemove }: Props) {
         <div className="text-sm font-medium text-gray-900 truncate max-w-[140px]">
           {file.filename}
         </div>
-        <div className="text-xs text-gray-400">
+        <div className={`text-xs ${file.error ? "text-red-500" : "text-gray-400"}`}>
           {file.error
-            ? "Error"
+            ? "Error - hover untuk detail"
             : `${(file.size / 1024).toFixed(1)} KB`}
         </div>
       </div>

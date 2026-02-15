@@ -28,6 +28,8 @@ export function ChatPage() {
     deleteSession,
     getMessages,
     saveMessages,
+    getFileContexts,
+    saveFileContexts,
     hydrated,
   } = useChatStore();
 
@@ -36,35 +38,48 @@ export function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const prevMessagesRef = useRef<string>("");
+  const saveMessagesRef = useRef(saveMessages);
+  saveMessagesRef.current = saveMessages;
 
-  // Use refs so the transport body closure always gets latest values
-  // without needing to recreate transport (which resets useChat state)
-  // Update refs synchronously during render (not in useEffect which runs after)
+  // Always-current ref for files — synced every render
   const filesRef = useRef<FileContext[]>(files);
   filesRef.current = files;
 
+  // Refs for transport body — these are read asynchronously when body() is called
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
-  // Create transport ONCE - body uses refs for latest values
+  // Pending files: set right before sendMessage, read by transport body()
+  const pendingFilesRef = useRef<FileContext[]>([]);
+
+  // Stored file contexts for the current session (persisted in localStorage)
+  const sessionFilesRef = useRef<FileContext[]>([]);
+
+  const saveFileContextsRef = useRef(saveFileContexts);
+  saveFileContextsRef.current = saveFileContexts;
+  const getFileContextsRef = useRef(getFileContexts);
+  getFileContextsRef.current = getFileContexts;
+
+  // Create transport ONCE — body is a function that reads refs at call time
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
         body: () => {
-          const currentFiles = filesRef.current;
-          console.log("[transport body] files count:", currentFiles.length);
-          if (currentFiles.length > 0) {
-            console.log("[transport body] first file:", currentFiles[0].filename);
-          }
+          // Merge: new uploaded files + stored session files (deduplicated by id)
+          const newFiles = pendingFilesRef.current;
+          const storedFiles = sessionFilesRef.current;
+          const allFilesMap = new Map<string, FileContext>();
+          for (const f of storedFiles) allFilesMap.set(f.id, f);
+          for (const f of newFiles) allFilesMap.set(f.id, f);
           return {
             provider: settingsRef.current.provider,
             model: settingsRef.current.model,
-            fileContexts: currentFiles,
+            fileContexts: Array.from(allFilesMap.values()),
           };
         },
       }),
-    [] // intentionally empty - transport is stable
+    []
   );
 
   const {
@@ -72,13 +87,10 @@ export function ChatPage() {
     setMessages,
     sendMessage,
     status,
-  } = useChat({
-    transport,
-  });
+  } = useChat({ transport });
 
   const isLoading = status === "streaming" || status === "submitted";
 
-  // Convert UIMessage[] to simple format for rendering
   const simpleMessages = useMemo(
     () =>
       messages
@@ -91,42 +103,110 @@ export function ChatPage() {
     [messages]
   );
 
-  // Load messages when switching sessions
+  const isNewSessionRef = useRef(false);
+
   useEffect(() => {
     if (currentSessionId && hydrated) {
-      const stored = getMessages(currentSessionId);
-      setMessages(
-        stored.map((m) => ({
-          id: m.id,
-          role: m.role,
-          parts: [{ type: "text" as const, text: m.content }],
-        }))
-      );
-      setFiles([]);
+      if (isNewSessionRef.current) {
+        isNewSessionRef.current = false;
+        sessionFilesRef.current = [];
+      } else {
+        const stored = getMessages(currentSessionId);
+        setMessages(
+          stored.map((m) => ({
+            id: m.id,
+            role: m.role,
+            parts: [{ type: "text" as const, text: m.content }],
+          }))
+        );
+        setFiles([]);
+        // Restore stored file contexts for this session
+        sessionFilesRef.current = getFileContextsRef.current(currentSessionId);
+      }
     } else {
       setMessages([]);
       setFiles([]);
+      sessionFilesRef.current = [];
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSessionId, hydrated]);
 
-  // Save messages when they change
   useEffect(() => {
     if (!currentSessionId || !hydrated) return;
     const serialized = JSON.stringify(simpleMessages);
     if (serialized !== prevMessagesRef.current && simpleMessages.length > 0) {
       prevMessagesRef.current = serialized;
-      saveMessages(currentSessionId, simpleMessages);
+      saveMessagesRef.current(currentSessionId, simpleMessages);
     }
-  }, [simpleMessages, currentSessionId, saveMessages, hydrated]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [simpleMessages, currentSessionId, hydrated]);
+
+  // Auto-continue: detect truncated responses and auto-send "lanjutkan"
+  const autoContinueCountRef = useRef(0);
+
+  useEffect(() => {
+    if (status !== "ready" || simpleMessages.length === 0) return;
+    const lastMsg = simpleMessages[simpleMessages.length - 1];
+    if (lastMsg.role !== "assistant") return;
+
+    const content = lastMsg.content.trim();
+
+    // Check if response looks truncated:
+    // 1. Ends with "[LANJUT]" (explicit continuation marker)
+    // 2. Ends mid-table row (line ends with | but no complete row closure)
+    // 3. Ends mid-word (last line has no sentence-ending punctuation and content is long enough)
+    const endsWithLanjut = content.endsWith("[LANJUT]");
+    const lastLine = content.split("\n").pop() || "";
+    const endsInTable = lastLine.includes("|") && !lastLine.trim().endsWith("|") && content.length > 500;
+    const isTruncatedMid = content.length > 1000 && !/[.!?\n]$/.test(content) && !content.endsWith("|");
+
+    const shouldContinue = endsWithLanjut || endsInTable || isTruncatedMid;
+
+    if (shouldContinue) {
+      // Max 5 auto-continues to prevent infinite loop
+      if (autoContinueCountRef.current >= 5) {
+        autoContinueCountRef.current = 0;
+        return;
+      }
+      autoContinueCountRef.current += 1;
+      const timer = setTimeout(() => {
+        sendMessage({ text: "lanjutkan" });
+      }, 800);
+      return () => clearTimeout(timer);
+    } else {
+      // Reset counter when response finishes naturally
+      autoContinueCountRef.current = 0;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, simpleMessages]);
 
   const handleSend = useCallback(
     (content: string) => {
+      // Use ref (always current) instead of closure `files` which may be stale
+      const newFiles = [...filesRef.current];
+      pendingFilesRef.current = newFiles;
+
       let sessionId = currentSessionId;
       if (!sessionId) {
+        isNewSessionRef.current = true;
         sessionId = createSession();
       }
+
+      // If there are new files, merge with session files and persist
+      if (newFiles.length > 0) {
+        const merged = new Map<string, FileContext>();
+        for (const f of sessionFilesRef.current) merged.set(f.id, f);
+        for (const f of newFiles) merged.set(f.id, f);
+        sessionFilesRef.current = Array.from(merged.values());
+        saveFileContextsRef.current(sessionId, sessionFilesRef.current);
+      }
+
+      // sendMessage triggers transport.sendMessages which calls body()
+      // body() reads pendingFilesRef + sessionFilesRef at that point
       sendMessage({ text: content });
+
+      // Clear UI files after send
+      setFiles([]);
     },
     [currentSessionId, createSession, sendMessage]
   );
@@ -135,6 +215,8 @@ export function ChatPage() {
     setCurrentSessionId(null);
     setMessages([]);
     setFiles([]);
+    pendingFilesRef.current = [];
+    sessionFilesRef.current = [];
   }, [setCurrentSessionId, setMessages]);
 
   const handleSelectSession = useCallback(
@@ -145,24 +227,15 @@ export function ChatPage() {
   );
 
   const handleRemoveFile = useCallback((id: string) => {
-    setFiles((prev) => {
-      const updated = prev.filter((f) => f.id !== id);
-      filesRef.current = updated;
-      return updated;
-    });
+    setFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
   const handleClearFiles = useCallback(() => {
-    filesRef.current = [];
     setFiles([]);
   }, []);
 
   const handleFilesUploaded = useCallback((newFiles: FileContext[]) => {
-    setFiles((prev) => {
-      const updated = [...prev, ...newFiles];
-      filesRef.current = updated; // sync ref immediately
-      return updated;
-    });
+    setFiles((prev) => [...prev, ...newFiles]);
   }, []);
 
   if (!hydrated) {

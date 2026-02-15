@@ -1,6 +1,7 @@
 import { streamText, type UIMessage, convertToModelMessages } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { openai } from "@ai-sdk/openai";
+import { createDeepSeek } from "@ai-sdk/deepseek";
 import { SYSTEM_PROMPT } from "@/lib/constants";
 
 const anthropic = createAnthropic({
@@ -8,7 +9,11 @@ const anthropic = createAnthropic({
   apiKey: process.env.CHATBOT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY,
 });
 
-export const maxDuration = 60;
+const deepseek = createDeepSeek({
+  apiKey: process.env.DEEPSEEK_API_KEY,
+});
+
+export const maxDuration = 300;
 
 export async function POST(req: Request) {
   try {
@@ -32,32 +37,38 @@ export async function POST(req: Request) {
       }
     }
 
-    console.log("[chat] FULL BODY KEYS:", Object.keys(body));
-    console.log("[chat] provider:", body.provider, "model:", body.model);
-    console.log("[chat] fileContexts:", body.fileContexts);
-    console.log("[chat] fileContexts count:", fileContexts?.length ?? 0);
-    if (fileContexts?.length > 0) {
-      console.log("[chat] fileContexts[0].filename:", fileContexts[0].filename);
-      console.log("[chat] fileContexts[0].text length:", fileContexts[0].text?.length ?? 0);
-      console.log("[chat] fileContexts[0].error:", fileContexts[0].error);
+    const providerName = provider || "deepseek";
+    const modelName = model || "deepseek-chat";
+
+    console.log("[chat] provider:", providerName, "model:", modelName, "files:", fileContexts?.length ?? 0);
+
+    let modelInstance;
+    if (providerName === "deepseek") {
+      modelInstance = deepseek(modelName);
+    } else if (providerName === "openai") {
+      modelInstance = openai(modelName);
+    } else {
+      modelInstance = anthropic(modelName);
     }
-
-    const providerName = provider || "anthropic";
-    const modelName = model || "claude-sonnet-4-5-20250929";
-
-    const modelInstance =
-      providerName === "openai" ? openai(modelName) : anthropic(modelName);
 
     // Convert UIMessages to model messages
     const modelMessages = await convertToModelMessages(
       (messages || []) as UIMessage[]
     );
 
+    // DeepSeek deepseek-chat supports max 8192 output tokens
+    // DeepSeek deepseek-reasoner supports 16384
+    // OpenAI gpt-4o supports 16384
+    const maxTokens =
+      providerName === "deepseek" && modelName === "deepseek-chat"
+        ? 8192
+        : 16384;
+
     const result = streamText({
       model: modelInstance,
       system: systemPrompt,
       messages: modelMessages,
-      maxOutputTokens: 8192,
+      maxOutputTokens: maxTokens,
     });
 
     return result.toUIMessageStreamResponse();

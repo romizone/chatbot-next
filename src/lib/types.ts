@@ -15,6 +15,6 @@ export interface ChatSession {
 }
 
 export interface AppSettings {
-  provider: "anthropic" | "openai";
+  provider: "anthropic" | "openai" | "deepseek";
   model: string;
 }

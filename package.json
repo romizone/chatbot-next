@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.44",
+    "@ai-sdk/deepseek": "^2.0.20",
     "@ai-sdk/openai": "^3.0.29",
     "@ai-sdk/react": "^3.0.88",
     "ai": "^6.0.86",
@@ -28,6 +29,7 @@
     "tailwind-merge": "^3.4.0",
     "tesseract.js": "^7.0.0",
     "uuid": "^13.0.0",
+    "word-extractor": "^1.0.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

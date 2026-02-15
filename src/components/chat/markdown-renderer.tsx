@@ -65,8 +65,8 @@ export function MarkdownRenderer({ content }: Props) {
         },
         table({ children }) {
           return (
-            <div className="my-3 overflow-x-auto rounded-lg border border-gray-200">
-              <table className="min-w-full text-sm">{children}</table>
+            <div className="my-3 overflow-x-auto rounded-lg border border-gray-200 max-w-full">
+              <table className="w-max min-w-full text-sm">{children}</table>
             </div>
           );
         },

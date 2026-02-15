@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
-import type { ChatSession, AppSettings } from "@/lib/types";
+import type { ChatSession, AppSettings, FileContext } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { v4 as uuid } from "uuid";
 
 const SESSIONS_KEY = "chatbot-sessions";
 const MESSAGES_PREFIX = "chatbot-msgs-";
+const FILES_PREFIX = "chatbot-files-";
 const SETTINGS_KEY = "chatbot-settings";
 
 export interface StoredMessage {
@@ -30,7 +31,14 @@ export function useChatStore() {
       }
       const storedSettings = localStorage.getItem(SETTINGS_KEY);
       if (storedSettings) {
-        setSettings(JSON.parse(storedSettings));
+        const parsed = JSON.parse(storedSettings);
+        // If stored provider differs from new default, reset to default
+        if (parsed.provider !== DEFAULT_SETTINGS.provider) {
+          setSettings(DEFAULT_SETTINGS);
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
+        } else {
+          setSettings(parsed);
+        }
       }
     } catch {
       // ignore
@@ -69,6 +77,7 @@ export function useChatStore() {
     (id: string) => {
       setSessions((prev) => prev.filter((s) => s.id !== id));
       localStorage.removeItem(MESSAGES_PREFIX + id);
+      localStorage.removeItem(FILES_PREFIX + id);
       if (currentSessionId === id) {
         setCurrentSessionId(null);
       }
@@ -77,16 +86,35 @@ export function useChatStore() {
   );
 
   const updateSessionTitle = useCallback((id: string, title: string) => {
-    setSessions((prev) =>
-      prev.map((s) =>
+    setSessions((prev) => {
+      const session = prev.find((s) => s.id === id);
+      // Skip update if title is already the same — prevents infinite re-render loop
+      if (session && session.title === title) return prev;
+      return prev.map((s) =>
         s.id === id ? { ...s, title, updatedAt: new Date().toISOString() } : s
-      )
-    );
+      );
+    });
   }, []);
 
   const getMessages = useCallback((sessionId: string): StoredMessage[] => {
     try {
       const stored = localStorage.getItem(MESSAGES_PREFIX + sessionId);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const saveFileContexts = useCallback((sessionId: string, files: FileContext[]) => {
+    if (files.length > 0) {
+      // Only store essential fields to save space (skip large text for storage, keep reference)
+      localStorage.setItem(FILES_PREFIX + sessionId, JSON.stringify(files));
+    }
+  }, []);
+
+  const getFileContexts = useCallback((sessionId: string): FileContext[] => {
+    try {
+      const stored = localStorage.getItem(FILES_PREFIX + sessionId);
       return stored ? JSON.parse(stored) : [];
     } catch {
       return [];
@@ -119,6 +147,8 @@ export function useChatStore() {
     deleteSession,
     getMessages,
     saveMessages,
+    getFileContexts,
+    saveFileContexts,
     hydrated,
   };
 }

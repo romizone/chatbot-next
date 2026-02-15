@@ -6,7 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ANTHROPIC_MODELS, OPENAI_MODELS } from "@/lib/constants";
+import { ANTHROPIC_MODELS, OPENAI_MODELS, DEEPSEEK_MODELS } from "@/lib/constants";
 import type { AppSettings } from "@/lib/types";
 
 interface Props {
@@ -23,7 +23,11 @@ export function SettingsDialog({
   onSettingsChange,
 }: Props) {
   const models =
-    settings.provider === "anthropic" ? ANTHROPIC_MODELS : OPENAI_MODELS;
+    settings.provider === "anthropic"
+      ? ANTHROPIC_MODELS
+      : settings.provider === "deepseek"
+        ? DEEPSEEK_MODELS
+        : OPENAI_MODELS;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -38,13 +42,17 @@ export function SettingsDialog({
             <label className="text-sm font-medium text-gray-700 block mb-2">
               Provider
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(["anthropic", "openai"] as const).map((p) => (
+            <div className="grid grid-cols-3 gap-2">
+              {(["deepseek", "openai", "anthropic"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => {
                     const newModels =
-                      p === "anthropic" ? ANTHROPIC_MODELS : OPENAI_MODELS;
+                      p === "anthropic"
+                        ? ANTHROPIC_MODELS
+                        : p === "deepseek"
+                          ? DEEPSEEK_MODELS
+                          : OPENAI_MODELS;
                     onSettingsChange({
                       provider: p,
                       model: newModels[0].id,
@@ -56,7 +64,7 @@ export function SettingsDialog({
                       : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                   }`}
                 >
-                  {p === "anthropic" ? "Engine A" : "Engine B"}
+                  {p === "deepseek" ? "Engine A" : p === "openai" ? "Engine B" : "Engine C"}
                 </button>
               ))}
             </div>
