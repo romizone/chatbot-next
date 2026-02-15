@@ -88,12 +88,13 @@ async function ocrPdf(buffer: Buffer, numPages: number): Promise<string> {
     await writeFile(pdfPath, buffer);
 
     // Convert PDF to PNG images using pdftoppm (poppler)
-    // Limit to first 20 pages to avoid excessive processing
-    const maxPages = Math.min(numPages, 20);
+    // Always limit to 20 pages max to avoid excessive processing
+    // Use "-l 20" to cap pages regardless of numPages (which may be wrong if pdf-parse failed)
+    const args = ["-png", "-r", "300", "-l", "20", pdfPath, path.join(tmpDir, "page")];
     await new Promise<void>((resolve, reject) => {
       execFile(
         "pdftoppm",
-        ["-png", "-r", "300", "-l", String(maxPages), pdfPath, path.join(tmpDir, "page")],
+        args,
         { timeout: 120000 },
         (error: Error | null) => {
           if (error) reject(error);

@@ -16,15 +16,18 @@ export function MarkdownRenderer({ content }: Props) {
       components={{
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || "");
-          const inline = !match;
-          return !inline ? (
+          const codeStr = String(children).replace(/\n$/, "");
+          // Block code: has language class OR contains newlines (fenced block without lang)
+          const isBlock = !!match || codeStr.includes("\n");
+          const language = match ? match[1] : "text";
+          return isBlock ? (
             <div className="my-3 rounded-lg overflow-hidden border border-gray-200">
               <div className="bg-gray-100 px-4 py-1.5 text-xs text-gray-500 font-mono border-b border-gray-200">
-                {match[1]}
+                {language}
               </div>
               <SyntaxHighlighter
                 style={oneLight}
-                language={match[1]}
+                language={language}
                 PreTag="div"
                 customStyle={{
                   margin: 0,
@@ -33,7 +36,7 @@ export function MarkdownRenderer({ content }: Props) {
                   background: "#fafafa",
                 }}
               >
-                {String(children).replace(/\n$/, "")}
+                {codeStr}
               </SyntaxHighlighter>
             </div>
           ) : (

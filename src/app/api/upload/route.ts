@@ -10,8 +10,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
 
+    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB per file
+    const MAX_FILES = 10;
+
+    if (files.length > MAX_FILES) {
+      return NextResponse.json(
+        { error: `Maksimum ${MAX_FILES} file per upload.` },
+        { status: 400 }
+      );
+    }
+
     const results = await Promise.all(
       files.map(async (file) => {
+        if (file.size > MAX_FILE_SIZE) {
+          return {
+            id: crypto.randomUUID(),
+            filename: file.name,
+            extension: file.name.split(".").pop()?.toLowerCase() || "",
+            text: "",
+            error: `File '${file.name}' terlalu besar (${(file.size / 1024 / 1024).toFixed(1)}MB). Maksimum 20MB.`,
+            size: file.size,
+          };
+        }
         const buffer = Buffer.from(await file.arrayBuffer());
         return processFile(buffer, file.name);
       })

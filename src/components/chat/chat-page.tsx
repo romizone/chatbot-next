@@ -98,7 +98,7 @@ export function ChatPage() {
         .map((m) => ({
           id: m.id,
           role: m.role as "user" | "assistant",
-          content: getTextFromParts(m.parts as { type: string; text?: string }[]),
+          content: getTextFromParts((m.parts || []) as { type: string; text?: string }[]),
         })),
     [messages]
   );
@@ -131,15 +131,18 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSessionId, hydrated]);
 
+  // Save messages: only when status is "ready" (not during streaming) to avoid
+  // localStorage thrashing on every text delta. Also save on unmount via ref.
   useEffect(() => {
     if (!currentSessionId || !hydrated) return;
+    if (status !== "ready") return; // Don't save during streaming
     const serialized = JSON.stringify(simpleMessages);
     if (serialized !== prevMessagesRef.current && simpleMessages.length > 0) {
       prevMessagesRef.current = serialized;
       saveMessagesRef.current(currentSessionId, simpleMessages);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [simpleMessages, currentSessionId, hydrated]);
+  }, [simpleMessages, currentSessionId, hydrated, status]);
 
   // Auto-continue: detect truncated responses and auto-send "lanjutkan"
   const autoContinueCountRef = useRef(0);
@@ -151,18 +154,19 @@ export function ChatPage() {
 
     const content = lastMsg.content.trim();
 
-    // Check if response looks truncated:
-    // 1. Ends with "[LANJUT]" (explicit continuation marker from server)
-    // 2. Ends mid-table row (line contains | but doesn't end cleanly)
-    // 3. Ends mid-sentence (long content without sentence-ending punctuation)
-    // 4. Ends mid-list item (last line starts with - or * followed by incomplete text)
+    // Primary: server appends "[LANJUT]" when finishReason === "length"
+    // This is the most reliable signal — trust it above all else.
     const endsWithLanjut = content.endsWith("[LANJUT]");
-    const lastLine = content.split("\n").pop() || "";
-    const endsInTable = lastLine.includes("|") && !lastLine.trim().endsWith("|") && content.length > 500;
-    const isTruncatedMid = content.length > 1000 && !/[.!?\n。）)」】]$/.test(content) && !content.endsWith("|");
-    const endsInList = content.length > 500 && /^[\s]*[-*\d]+[.)]\s/.test(lastLine) && !/[.!?。]$/.test(lastLine.trim());
 
-    const shouldContinue = endsWithLanjut || endsInTable || isTruncatedMid || endsInList;
+    // Secondary heuristics (only for edge cases where server marker might be missing):
+    // - Must be long enough to plausibly be truncated (> 2000 chars)
+    // - Must NOT end with natural sentence-ending punctuation or markdown closers
+    const lastLine = content.split("\n").pop() || "";
+    const naturalEnd = /[.!?。）)」】:：]$/.test(content) || /```$/.test(content) || content.endsWith("|");
+    const endsInTable = !naturalEnd && lastLine.includes("|") && content.length > 2000;
+    const isTruncatedMid = !naturalEnd && content.length > 2000 && !/\n$/.test(content);
+
+    const shouldContinue = endsWithLanjut || endsInTable || isTruncatedMid;
 
     if (shouldContinue) {
       // Max 5 auto-continues to prevent infinite loop

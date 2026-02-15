@@ -71,31 +71,58 @@ export async function POST(req: Request) {
       maxOutputTokens: maxTokens,
     });
 
-    // Wrap the stream to detect finish_reason: "length" and append [LANJUT]
+    // Wrap the stream: intercept chunks and inject [LANJUT] BEFORE finish-step
+    // when finishReason is "length" (token limit hit)
     return createUIMessageStreamResponse({
       stream: createUIMessageStream({
         execute: async ({ writer }) => {
+          // Start resolving finishReason in parallel (resolves when generation completes)
+          const finishReasonPromise = result.finishReason;
+
           const reader = result.toUIMessageStream().getReader();
+          // Buffer: hold back finish-step/finish events so we can inject before them
+          const buffered: unknown[] = [];
+          let foundFinishStep = false;
+
           try {
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
+
+              // Check if this chunk is a finish-step or finish event
+              const chunk = value as { type?: string };
+              if (chunk.type === "finish-step" || chunk.type === "finish") {
+                buffered.push(value);
+                foundFinishStep = true;
+                continue;
+              }
+
+              // If we already found finish-step but get more chunks, flush buffer first
+              if (foundFinishStep) {
+                for (const b of buffered) writer.write(b);
+                buffered.length = 0;
+                foundFinishStep = false;
+              }
+
               writer.write(value);
             }
           } finally {
             reader.releaseLock();
           }
 
-          // Check if response was truncated by token limit
-          const finishReason = await result.finishReason;
+          // Now check finishReason and inject [LANJUT] BEFORE buffered finish events
+          const finishReason = await finishReasonPromise;
           console.log("[chat] finishReason:", finishReason);
+
           if (finishReason === "length") {
-            // Append continuation marker so frontend auto-continue triggers
             writer.write({
               type: "text-delta",
               textDelta: "\n\n[LANJUT]",
             });
           }
+
+          // Flush remaining buffered finish events
+          for (const b of buffered) writer.write(b);
         },
       }),
     });
