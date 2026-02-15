@@ -102,13 +102,37 @@ function processCsv(buffer: Buffer): string {
 }
 
 async function processImage(buffer: Buffer): Promise<string> {
-  const Tesseract = await import("tesseract.js");
-  const worker = await Tesseract.createWorker("eng+ind");
-  const {
-    data: { text },
-  } = await worker.recognize(buffer);
-  await worker.terminate();
-  return text.trim();
+  const { writeFile, readFile, unlink } = require("fs/promises");
+  const { tmpdir } = require("os");
+  const path = require("path");
+  const { execFile } = require("child_process");
+
+  const inputPath = path.join(tmpdir(), `ocr-${uuidv4()}`);
+  const outputBase = path.join(tmpdir(), `ocr-out-${uuidv4()}`);
+  const outputPath = outputBase + ".txt";
+
+  try {
+    await writeFile(inputPath, buffer);
+
+    // Use system tesseract CLI — avoids Turbopack module resolution issues
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "tesseract",
+        [inputPath, outputBase, "-l", "eng+ind"],
+        { timeout: 60000 },
+        (error: Error | null) => {
+          if (error) reject(error);
+          else resolve();
+        }
+      );
+    });
+
+    const text = await readFile(outputPath, "utf-8");
+    return text.trim();
+  } finally {
+    await unlink(inputPath).catch(() => {});
+    await unlink(outputPath).catch(() => {});
+  }
 }
 
 function processText(buffer: Buffer): string {
