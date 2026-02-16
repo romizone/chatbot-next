@@ -2,11 +2,11 @@
 
 # <img src="public/icon.svg" width="40" height="40" alt="icon" /> Open Chatbot
 
-### Zero File Leakage AI Chatbot — Your Documents Never Leave Your Server
+### Zero File Leakage AI Chatbot — Privacy by Design
 
-**An AI chatbot that prevents document data leakage.**
-PDF, Word, Excel, and image files are **never sent raw** to AI providers.
-Only **sliced text JSON chunks** are transmitted — and **nothing is stored** by inference APIs.
+**Your documents never leave your server. Only text goes to the cloud.**
+
+This architectural approach adopts the principle of **Privacy by Design**, where all documents are processed locally on the user's server before interacting with AI models through an API. The original files — whether PDF, Word, Excel, or OCR-extracted text from images — are **never transmitted** to the AI provider. The system only sends parsed and sliced text segments structured as JSON. Only the textual content relevant for reasoning is transmitted to the API, without including raw files, full document structures, or any sensitive metadata.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)](https://nextjs.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev/)
