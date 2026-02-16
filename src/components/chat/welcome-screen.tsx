@@ -9,7 +9,7 @@ export function WelcomeScreen() {
         <Bot className="w-8 h-8 text-white" />
       </div>
       <h1 className="text-2xl font-semibold text-gray-900 mb-1">
-        Local Chatbot Qwen 7B
+        Open Chatbot
       </h1>
       <p className="text-[15px] text-gray-400">
         Ada yang bisa saya bantu hari ini?

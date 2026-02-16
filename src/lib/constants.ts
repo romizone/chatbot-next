@@ -11,29 +11,39 @@ export const ACCEPT_FILE_TYPES =
   ".pdf,.doc,.docx,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.txt,.md,.json,.xml,.html,.log,.py,.js,.ts,.java,.c,.cpp";
 
 export const ANTHROPIC_MODELS = [
-  { id: "claude-sonnet-4-5-20250929", name: "Qwen 7B Pro" },
-  { id: "claude-haiku-4-5-20251001", name: "Qwen 7B Lite" },
+  { id: "claude-sonnet-4-5-20250929", name: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
 ];
 
 export const OPENAI_MODELS = [
-  { id: "gpt-4o", name: "Qwen 7B Ultra" },
-  { id: "gpt-4o-mini", name: "Qwen 7B Mini" },
-  { id: "gpt-4.1", name: "Qwen 7B Max" },
-  { id: "gpt-4.1-mini", name: "Qwen 7B Fast" },
+  { id: "gpt-4o", name: "GPT-4o" },
+  { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+  { id: "gpt-4.1", name: "GPT-4.1" },
+  { id: "gpt-4.1-mini", name: "GPT-4.1 Mini" },
 ];
 
 export const DEEPSEEK_MODELS = [
-  { id: "deepseek-chat", name: "Qwen 7B Chat" },
-  { id: "deepseek-reasoner", name: "Qwen 7B Reasoner" },
+  { id: "deepseek-chat", name: "DeepSeek Chat" },
+  { id: "deepseek-reasoner", name: "DeepSeek Reasoner" },
 ];
 
-export const SYSTEM_PROMPT = `Kamu adalah asisten AI lokal bernama Local Chatbot Qwen 7B yang membantu menganalisis dokumen dan menjawab pertanyaan. Jawab dalam bahasa yang sama dengan pertanyaan user. Jangan pernah menyebut bahwa kamu adalah Claude, GPT, DeepSeek, atau model lain. Kamu adalah Local Chatbot Qwen 7B.
+export const SYSTEM_PROMPT = `Kamu adalah asisten AI bernama Open Chatbot yang membantu menganalisis dokumen dan menjawab pertanyaan. Jawab dalam bahasa yang sama dengan pertanyaan user.
 
-PENTING: Jawaban kamu memiliki batas panjang. Jika membuat tabel perbandingan, buat ringkas dan padat. Gunakan singkatan jika perlu. Jika tabel terlalu panjang, bagi menjadi beberapa bagian dan selesaikan bagian pertama dulu. Di akhir, tulis "[LANJUT]" jika masih ada bagian yang belum disampaikan, sehingga user bisa meminta kelanjutannya.`;
+PENTING: Jawaban kamu memiliki batas panjang. Jika membuat tabel perbandingan, buat ringkas dan padat. Gunakan singkatan jika perlu. Jika tabel terlalu panjang, bagi menjadi beberapa bagian dan selesaikan bagian pertama dulu. Di akhir, tulis "[LANJUT]" jika masih ada bagian yang belum disampaikan, sehingga user bisa meminta kelanjutannya.
+
+FORMAT MATEMATIKA: Saat menulis rumus atau ekspresi matematika, SELALU gunakan format LaTeX dengan delimiter:
+- Inline math: $rumus$ (contoh: $x^2 + y^2 = z^2$)
+- Block/display math: $$rumus$$ (contoh: $$\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}$$)
+JANGAN pernah menulis LaTeX tanpa delimiter $ atau $$. JANGAN gunakan \\[...\\] atau \\(...\\).`;
 
 export const DEFAULT_SETTINGS = {
   provider: "deepseek" as const,
   model: "deepseek-chat",
+  apiKeys: {
+    openai: "",
+    anthropic: "",
+    deepseek: "",
+  },
 };
 
 export const BADGE_COLORS: Record<string, string> = {

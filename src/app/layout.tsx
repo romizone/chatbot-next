@@ -8,8 +8,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Local Chatbot Qwen 7B",
-  description: "Asisten AI lokal dengan kemampuan analisis dokumen dan OCR",
+  title: "Open Chatbot",
+  description: "Open Chatbot — multi-provider AI assistant dengan analisis dokumen dan OCR",
 };
 
 export default function RootLayout({

@@ -2,6 +2,9 @@
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 
@@ -9,10 +12,33 @@ interface Props {
   content: string;
 }
 
+/**
+ * Pre-process content to normalize LaTeX delimiters for remark-math.
+ * Fallback: converts \[...\] → $$...$$ and \(...\) → $...$
+ * System prompt already instructs model to use $...$ and $$...$$.
+ */
+function preprocessLaTeX(content: string): string {
+  // Step 1: Convert \[...\] to $$...$$ (block math)
+  let result = content.replace(
+    /\\\[([\s\S]*?)\\\]/g,
+    (_match, inner) => `$$${inner}$$`
+  );
+
+  // Step 2: Convert \(...\) to $...$ (inline math)
+  result = result.replace(
+    /\\\(([\s\S]*?)\\\)/g,
+    (_match, inner) => `$${inner}$`
+  );
+
+  return result;
+}
+
 export function MarkdownRenderer({ content }: Props) {
+  const processed = preprocessLaTeX(content);
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
       components={{
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || "");
@@ -85,6 +111,12 @@ export function MarkdownRenderer({ content }: Props) {
             <td className="px-4 py-2 border-b border-gray-100">{children}</td>
           );
         },
+        img({ src, alt, ...props }) {
+          // Skip rendering if src is empty — prevents browser error
+          if (!src) return null;
+          // eslint-disable-next-line @next/next/no-img-element
+          return <img src={src} alt={alt || ""} className="max-w-full rounded my-2" {...props} />;
+        },
         blockquote({ children }) {
           return (
             <blockquote className="border-l-4 border-gray-300 pl-4 my-3 text-gray-600 italic">
@@ -94,7 +126,7 @@ export function MarkdownRenderer({ content }: Props) {
         },
       }}
     >
-      {content}
+      {processed}
     </ReactMarkdown>
   );
 }

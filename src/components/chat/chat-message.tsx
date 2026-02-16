@@ -19,7 +19,7 @@ export function ChatMessage({ role, content }: Props) {
         </div>
       )}
       <div
-        className={`max-w-[85%] ${
+        className={`max-w-[90%] ${
           isUser
             ? "bg-gray-100 rounded-2xl rounded-tr-sm px-4 py-3 text-gray-900"
             : "text-gray-900 py-1"

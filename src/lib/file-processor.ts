@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports */
 import { IMAGE_EXTENSIONS, TEXT_EXTENSIONS, SUPPORTED_EXTENSIONS } from "./constants";
 import type { FileContext } from "./types";
 import { v4 as uuidv4 } from "uuid";
@@ -52,30 +53,51 @@ export async function processFile(
 }
 
 async function processPdf(buffer: Buffer): Promise<string> {
-  let text = "";
-  let numPages = 1;
+  const { writeFile, readFile } = require("fs/promises");
+  const { mkdtemp, rm } = require("fs/promises");
+  const { tmpdir } = require("os");
+  const path = require("path");
+  const { execFile } = require("child_process");
+
+  // Step 1: Try fast text extraction with pdftotext CLI (poppler)
+  const tmpDir = await mkdtemp(path.join(tmpdir(), "pdf-txt-"));
+  const pdfPath = path.join(tmpDir, "input.pdf");
+  const txtPath = path.join(tmpDir, "output.txt");
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse");
-    const data = await pdfParse(buffer);
-    text = (data.text || "").trim();
-    numPages = data.numpages || 1;
-  } catch {
-    // pdf-parse can fail (e.g. DOMMatrix not defined) — fallback to OCR
+    await writeFile(pdfPath, buffer);
+
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        "pdftotext",
+        ["-layout", pdfPath, txtPath],
+        { timeout: 15000 },
+        (error: Error | null) => {
+          if (error) reject(error);
+          else resolve();
+        }
+      );
+    });
+
+    const text = (await readFile(txtPath, "utf-8")).trim();
+    console.log(`[pdf] pdftotext extracted ${text.length} chars`);
+
+    if (text.length > 50) {
+      return text;
+    }
+  } catch (e) {
+    console.log(`[pdf] pdftotext failed: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
 
-  // If pdf-parse extracted meaningful text, use it
-  if (text.length > 50) {
-    return text;
-  }
-
-  // Fallback: convert PDF pages to images with pdftoppm, then OCR each page
-  return await ocrPdf(buffer, numPages);
+  // Step 2: Fallback — convert PDF pages to images with pdftoppm, then OCR
+  console.log("[pdf] Text extraction empty, starting OCR fallback...");
+  return await ocrPdf(buffer);
 }
 
-async function ocrPdf(buffer: Buffer, numPages: number): Promise<string> {
-  const { writeFile, readFile, unlink, readdir } = require("fs/promises");
+async function ocrPdf(buffer: Buffer): Promise<string> {
+  const { writeFile, readFile, readdir } = require("fs/promises");
   const { mkdtemp, rm } = require("fs/promises");
   const { tmpdir } = require("os");
   const path = require("path");
@@ -89,7 +111,6 @@ async function ocrPdf(buffer: Buffer, numPages: number): Promise<string> {
 
     // Convert PDF to PNG images using pdftoppm (poppler)
     // Always limit to 20 pages max to avoid excessive processing
-    // Use "-l 20" to cap pages regardless of numPages (which may be wrong if pdf-parse failed)
     const args = ["-png", "-r", "300", "-l", "20", pdfPath, path.join(tmpDir, "page")];
     await new Promise<void>((resolve, reject) => {
       execFile(

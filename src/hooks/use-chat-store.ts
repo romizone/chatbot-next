@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 import type { ChatSession, AppSettings, FileContext } from "@/lib/types";
 import { DEFAULT_SETTINGS } from "@/lib/constants";
 import { v4 as uuid } from "uuid";
@@ -16,49 +16,72 @@ export interface StoredMessage {
   content: string;
 }
 
+function readLocalStorage<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function readSettings(): AppSettings {
+  const stored = readLocalStorage<AppSettings | null>(SETTINGS_KEY, null);
+  if (!stored) return DEFAULT_SETTINGS;
+  // Deep merge: preserves user choices while adding new fields from defaults
+  return {
+    ...DEFAULT_SETTINGS,
+    ...stored,
+    apiKeys: {
+      ...DEFAULT_SETTINGS.apiKeys,
+      ...(stored.apiKeys || {}),
+    },
+  };
+}
+
+// SSR-safe hydration detection using useSyncExternalStore
+const emptySubscribe = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function useHydrated(): boolean {
+  return useSyncExternalStore(emptySubscribe, getClientSnapshot, getServerSnapshot);
+}
+
 export function useChatStore() {
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>(() => readLocalStorage(SESSIONS_KEY, []));
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [hydrated, setHydrated] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(() => readSettings());
+  const hydrated = useHydrated();
 
-  // Hydrate from localStorage
+  // Persist sessions (skip first render to avoid writing hydrated state back)
+  const sessionsInitRef = useRef(false);
   useEffect(() => {
+    if (!sessionsInitRef.current) {
+      sessionsInitRef.current = true;
+      return;
+    }
     try {
-      const storedSessions = localStorage.getItem(SESSIONS_KEY);
-      if (storedSessions) {
-        setSessions(JSON.parse(storedSessions));
-      }
-      const storedSettings = localStorage.getItem(SETTINGS_KEY);
-      if (storedSettings) {
-        const parsed = JSON.parse(storedSettings);
-        // If stored provider differs from new default, reset to default
-        if (parsed.provider !== DEFAULT_SETTINGS.provider) {
-          setSettings(DEFAULT_SETTINGS);
-          localStorage.setItem(SETTINGS_KEY, JSON.stringify(DEFAULT_SETTINGS));
-        } else {
-          setSettings(parsed);
-        }
-      }
-    } catch {
-      // ignore
-    }
-    setHydrated(true);
-  }, []);
-
-  // Persist sessions
-  useEffect(() => {
-    if (hydrated) {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    } catch {
+      console.warn("[store] Failed to persist sessions to localStorage (quota?)");
     }
-  }, [sessions, hydrated]);
+  }, [sessions]);
 
   // Persist settings
+  const settingsInitRef = useRef(false);
   useEffect(() => {
-    if (hydrated) {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    if (!settingsInitRef.current) {
+      settingsInitRef.current = true;
+      return;
     }
-  }, [settings, hydrated]);
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch {
+      console.warn("[store] Failed to persist settings to localStorage (quota?)");
+    }
+  }, [settings]);
 
   const createSession = useCallback((): string => {
     const id = uuid();
@@ -107,8 +130,18 @@ export function useChatStore() {
 
   const saveFileContexts = useCallback((sessionId: string, files: FileContext[]) => {
     if (files.length > 0) {
-      // Only store essential fields to save space (skip large text for storage, keep reference)
-      localStorage.setItem(FILES_PREFIX + sessionId, JSON.stringify(files));
+      try {
+        // Only save metadata (no text) — text is too large for localStorage.
+        // Files restored from localStorage will have empty text and need re-upload for full context.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const metadata = files.map(({ text: _t, ...rest }) => ({
+          ...rest,
+          text: "",
+        }));
+        localStorage.setItem(FILES_PREFIX + sessionId, JSON.stringify(metadata));
+      } catch {
+        console.warn("[store] Failed to persist file contexts to localStorage (quota?)");
+      }
     }
   }, []);
 
@@ -122,7 +155,11 @@ export function useChatStore() {
   }, []);
 
   const saveMessages = useCallback((sessionId: string, messages: StoredMessage[]) => {
-    localStorage.setItem(MESSAGES_PREFIX + sessionId, JSON.stringify(messages));
+    try {
+      localStorage.setItem(MESSAGES_PREFIX + sessionId, JSON.stringify(messages));
+    } catch {
+      console.warn("[store] Failed to persist messages to localStorage (quota?)");
+    }
     // Update title from first user message
     if (messages.length >= 1) {
       const firstUserMsg = messages.find((m) => m.role === "user");

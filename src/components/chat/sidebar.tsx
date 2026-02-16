@@ -1,7 +1,14 @@
 "use client";
 
-import { Bot, Plus, Settings, Trash2, MessageSquare, PanelLeftClose, PanelLeft } from "lucide-react";
-import type { ChatSession } from "@/lib/types";
+import { Bot, Plus, Settings, Trash2, MessageSquare, PanelLeftClose, PanelLeft, Zap, ZapOff } from "lucide-react";
+import type { ChatSession, AppSettings } from "@/lib/types";
+import { ANTHROPIC_MODELS, OPENAI_MODELS, DEEPSEEK_MODELS } from "@/lib/constants";
+
+const PROVIDER_LABELS: Record<string, string> = {
+  deepseek: "DeepSeek",
+  openai: "OpenAI",
+  anthropic: "Claude",
+};
 
 interface Props {
   sessions: ChatSession[];
@@ -12,6 +19,7 @@ interface Props {
   onOpenSettings: () => void;
   isOpen: boolean;
   onToggle: () => void;
+  settings: AppSettings;
 }
 
 export function Sidebar({
@@ -23,7 +31,16 @@ export function Sidebar({
   onOpenSettings,
   isOpen,
   onToggle,
+  settings,
 }: Props) {
+  const hasKey = !!(settings.apiKeys[settings.provider]);
+  const providerLabel = PROVIDER_LABELS[settings.provider] || settings.provider;
+  const allModels = settings.provider === "anthropic"
+    ? ANTHROPIC_MODELS
+    : settings.provider === "deepseek"
+      ? DEEPSEEK_MODELS
+      : OPENAI_MODELS;
+  const modelLabel = allModels.find((m) => m.id === settings.model)?.name || settings.model;
   return (
     <>
       {/* Toggle button when sidebar is closed */}
@@ -49,7 +66,7 @@ export function Sidebar({
               <Bot className="w-5 h-5 text-white" />
             </div>
             <span className="font-semibold text-gray-900 text-sm">
-              Local Chatbot Qwen 7B
+              Open Chatbot
             </span>
           </div>
           <button
@@ -59,6 +76,30 @@ export function Sidebar({
             <PanelLeftClose className="w-5 h-5" />
           </button>
         </div>
+
+        {/* API connection indicator */}
+        <button
+          onClick={onOpenSettings}
+          className={`mx-3 mt-3 flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs transition-colors ${
+            hasKey
+              ? "bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
+              : "bg-red-50 border border-red-200 text-red-600 hover:bg-red-100"
+          }`}
+        >
+          {hasKey ? (
+            <Zap className="w-3.5 h-3.5 flex-shrink-0" />
+          ) : (
+            <ZapOff className="w-3.5 h-3.5 flex-shrink-0" />
+          )}
+          <div className="flex flex-col items-start min-w-0">
+            <span className="font-medium">
+              {hasKey ? `Terhubung — ${providerLabel}` : "Tidak terhubung"}
+            </span>
+            <span className={`truncate w-full ${hasKey ? "text-emerald-500" : "text-red-400"}`}>
+              {hasKey ? modelLabel : "API key belum diisi"}
+            </span>
+          </div>
+        </button>
 
         {/* New chat button */}
         <div className="px-3 py-3">

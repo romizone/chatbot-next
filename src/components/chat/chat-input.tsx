@@ -86,7 +86,7 @@ export function ChatInput({
   };
 
   return (
-    <div className="w-full max-w-[960px] mx-auto px-4 pb-4">
+    <div className="w-full max-w-[1088px] mx-auto px-5 pb-4">
       <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
         <FilePreview files={files} onRemove={onRemoveFile} onClearAll={onClearFiles} />
         <div className="flex items-end gap-2 px-3 py-3">
@@ -142,7 +142,7 @@ export function ChatInput({
         </div>
       </div>
       <p className="text-[11px] text-purple-900 text-center mt-2">
-        <strong>Local ChatBot Qwen 7B dapat membuat kesalahan. Periksa informasi penting.</strong>
+        <strong>Open Chatbot dapat membuat kesalahan. Periksa informasi penting.</strong>
       </p>
     </div>
   );

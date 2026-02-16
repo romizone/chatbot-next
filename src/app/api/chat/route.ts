@@ -1,24 +1,15 @@
 import { streamText, type UIMessage, convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { openai } from "@ai-sdk/openai";
+import { createOpenAI } from "@ai-sdk/openai";
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { SYSTEM_PROMPT } from "@/lib/constants";
-
-const anthropic = createAnthropic({
-  baseURL: "https://api.anthropic.com/v1",
-  apiKey: process.env.CHATBOT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY,
-});
-
-const deepseek = createDeepSeek({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-});
 
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, provider, model, fileContexts } = body;
+    const { messages, provider, model, apiKey, fileContexts } = body;
 
     let systemPrompt = SYSTEM_PROMPT;
 
@@ -42,13 +33,41 @@ export async function POST(req: Request) {
 
     console.log("[chat] provider:", providerName, "model:", modelName, "files:", fileContexts?.length ?? 0);
 
+    // Create provider instance per-request with API key from client (fallback to env var)
     let modelInstance;
     if (providerName === "deepseek") {
-      modelInstance = deepseek(modelName);
+      const key = apiKey || process.env.DEEPSEEK_API_KEY;
+      if (!key) {
+        return new Response(
+          JSON.stringify({ error: "DeepSeek API key belum diisi. Buka Pengaturan untuk memasukkan API key." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const ds = createDeepSeek({ apiKey: key });
+      modelInstance = ds(modelName);
     } else if (providerName === "openai") {
-      modelInstance = openai(modelName);
+      const key = apiKey || process.env.OPENAI_API_KEY;
+      if (!key) {
+        return new Response(
+          JSON.stringify({ error: "OpenAI API key belum diisi. Buka Pengaturan untuk memasukkan API key." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const oai = createOpenAI({ apiKey: key });
+      modelInstance = oai(modelName);
     } else {
-      modelInstance = anthropic(modelName);
+      const key = apiKey || process.env.CHATBOT_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
+      if (!key) {
+        return new Response(
+          JSON.stringify({ error: "Claude API key belum diisi. Buka Pengaturan untuk memasukkan API key." }),
+          { status: 400, headers: { "Content-Type": "application/json" } }
+        );
+      }
+      const anth = createAnthropic({
+        baseURL: "https://api.anthropic.com/v1",
+        apiKey: key,
+      });
+      modelInstance = anth(modelName);
     }
 
     // Convert UIMessages to model messages
@@ -56,13 +75,18 @@ export async function POST(req: Request) {
       (messages || []) as UIMessage[]
     );
 
-    // DeepSeek deepseek-chat supports max 8192 output tokens
-    // DeepSeek deepseek-reasoner supports 16384
-    // OpenAI gpt-4o supports 16384
-    const maxTokens =
-      providerName === "deepseek" && modelName === "deepseek-chat"
-        ? 8192
-        : 16384;
+    // Max output tokens per model
+    const MAX_TOKENS: Record<string, number> = {
+      "deepseek-chat": 8192,
+      "deepseek-reasoner": 16384,
+      "gpt-4o": 16384,
+      "gpt-4o-mini": 16384,
+      "gpt-4.1": 32768,
+      "gpt-4.1-mini": 32768,
+      "claude-sonnet-4-5-20250929": 16384,
+      "claude-haiku-4-5-20251001": 8192,
+    };
+    const maxTokens = MAX_TOKENS[modelName] || 8192;
 
     const result = streamText({
       model: modelInstance,
@@ -79,10 +103,13 @@ export async function POST(req: Request) {
           // Start resolving finishReason in parallel (resolves when generation completes)
           const finishReasonPromise = result.finishReason;
 
-          const reader = result.toUIMessageStream().getReader();
+          const uiStream = result.toUIMessageStream();
+          const reader = uiStream.getReader();
+          type UIStreamChunk = Parameters<typeof writer.write>[0];
           // Buffer: hold back finish-step/finish events so we can inject before them
-          const buffered: unknown[] = [];
+          const buffered: UIStreamChunk[] = [];
           let foundFinishStep = false;
+          let lastTextId = "";
 
           try {
             while (true) {
@@ -90,11 +117,16 @@ export async function POST(req: Request) {
               if (done) break;
 
               // Check if this chunk is a finish-step or finish event
-              const chunk = value as { type?: string };
+              const chunk = value as { type?: string; id?: string };
               if (chunk.type === "finish-step" || chunk.type === "finish") {
                 buffered.push(value);
                 foundFinishStep = true;
                 continue;
+              }
+
+              // Track the id of the last text-delta for injection
+              if (chunk.type === "text-delta" && chunk.id) {
+                lastTextId = chunk.id;
               }
 
               // If we already found finish-step but get more chunks, flush buffer first
@@ -114,11 +146,13 @@ export async function POST(req: Request) {
           const finishReason = await finishReasonPromise;
           console.log("[chat] finishReason:", finishReason);
 
-          if (finishReason === "length") {
+          if (finishReason === "length" && lastTextId) {
+            // Inject [LANJUT] using the same text part id as the model's last delta
             writer.write({
               type: "text-delta",
-              textDelta: "\n\n[LANJUT]",
-            });
+              delta: "\n\n[LANJUT]",
+              id: lastTextId,
+            } as UIStreamChunk);
           }
 
           // Flush remaining buffered finish events

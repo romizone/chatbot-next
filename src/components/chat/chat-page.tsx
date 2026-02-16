@@ -67,14 +67,23 @@ export function ChatPage() {
         api: "/api/chat",
         body: () => {
           // Merge: new uploaded files + stored session files (deduplicated by id)
+          // Only include files that have actual text content (skip restored-from-localStorage metadata-only files)
           const newFiles = pendingFilesRef.current;
           const storedFiles = sessionFilesRef.current;
           const allFilesMap = new Map<string, FileContext>();
-          for (const f of storedFiles) allFilesMap.set(f.id, f);
-          for (const f of newFiles) allFilesMap.set(f.id, f);
+          for (const f of storedFiles) if (f.text) allFilesMap.set(f.id, f);
+          for (const f of newFiles) if (f.text) allFilesMap.set(f.id, f);
+
+          // Clear pending after reading — prevents stale files on next message
+          // This is the safe place to clear (after body() has read the files),
+          // NOT in the session-switch useEffect (which races with body()).
+          pendingFilesRef.current = [];
+
+          const currentSettings = settingsRef.current;
           return {
-            provider: settingsRef.current.provider,
-            model: settingsRef.current.model,
+            provider: currentSettings.provider,
+            model: currentSettings.model,
+            apiKey: currentSettings.apiKeys[currentSettings.provider] || "",
             fileContexts: Array.from(allFilesMap.values()),
           };
         },
@@ -82,12 +91,22 @@ export function ChatPage() {
     []
   );
 
+  const [chatError, setChatError] = useState<string | null>(null);
+
   const {
     messages,
     setMessages,
     sendMessage,
     status,
-  } = useChat({ transport });
+  } = useChat({
+    transport,
+    onError: (error) => {
+      console.error("[chat] error:", error);
+      // Try to extract JSON error message from response
+      const msg = error.message || "Terjadi kesalahan. Coba lagi.";
+      setChatError(msg);
+    },
+  });
 
   const isLoading = status === "streaming" || status === "submitted";
 
@@ -105,11 +124,21 @@ export function ChatPage() {
 
   const isNewSessionRef = useRef(false);
 
+  // Track expired files (restored from localStorage without text content)
+  const [expiredFileNames, setExpiredFileNames] = useState<string[]>([]);
+
   useEffect(() => {
+    // DON'T clear pendingFilesRef here — it causes a race condition:
+    // handleSend() sets pendingFilesRef → createSession() changes currentSessionId →
+    // this effect fires and clears pendingFilesRef BEFORE transport.body() reads it.
+    // Instead, pendingFilesRef is cleared inside transport.body() after reading.
+    setExpiredFileNames([]);
+
     if (currentSessionId && hydrated) {
       if (isNewSessionRef.current) {
         isNewSessionRef.current = false;
-        sessionFilesRef.current = [];
+        // Don't clear sessionFilesRef — handleSend() already populated it
+        // before calling createSession(), so clearing here would race.
       } else {
         const stored = getMessages(currentSessionId);
         setMessages(
@@ -121,7 +150,13 @@ export function ChatPage() {
         );
         setFiles([]);
         // Restore stored file contexts for this session
-        sessionFilesRef.current = getFileContextsRef.current(currentSessionId);
+        const restoredFiles = getFileContextsRef.current(currentSessionId);
+        sessionFilesRef.current = restoredFiles;
+        // Check if any restored files have lost their text content
+        const expired = restoredFiles.filter((f) => !f.text).map((f) => f.filename);
+        if (expired.length > 0) {
+          setExpiredFileNames(expired);
+        }
       }
     } else {
       setMessages([]);
@@ -141,7 +176,6 @@ export function ChatPage() {
       prevMessagesRef.current = serialized;
       saveMessagesRef.current(currentSessionId, simpleMessages);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [simpleMessages, currentSessionId, hydrated, status]);
 
   // Auto-continue: detect truncated responses and auto-send "lanjutkan"
@@ -188,6 +222,7 @@ export function ChatPage() {
 
   const handleSend = useCallback(
     (content: string) => {
+      setChatError(null);
       // Use ref (always current) instead of closure `files` which may be stale
       const newFiles = [...filesRef.current];
       pendingFilesRef.current = newFiles;
@@ -263,6 +298,7 @@ export function ChatPage() {
         onOpenSettings={() => setSettingsOpen(true)}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
+        settings={settings}
       />
 
       <div
@@ -274,6 +310,35 @@ export function ChatPage() {
           messages={simpleMessages}
           isLoading={isLoading}
         />
+        {chatError && (
+          <div className="max-w-[1088px] mx-auto px-5 w-full">
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-sm text-red-800 mb-2">
+              <span>{chatError}</span>
+              <button
+                onClick={() => setChatError(null)}
+                className="ml-auto text-red-400 hover:text-red-600 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+        {expiredFileNames.length > 0 && (
+          <div className="max-w-[1088px] mx-auto px-5 w-full">
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800 mb-2">
+              <span>⚠️</span>
+              <span>
+                File <strong>{expiredFileNames.join(", ")}</strong> perlu di-upload ulang untuk konteks penuh.
+              </span>
+              <button
+                onClick={() => setExpiredFileNames([])}
+                className="ml-auto text-amber-500 hover:text-amber-700 text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
         <ChatInput
           onSend={handleSend}
           onFilesUploaded={handleFilesUploaded}

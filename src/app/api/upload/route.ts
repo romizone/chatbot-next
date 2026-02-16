@@ -20,22 +20,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const results = await Promise.all(
-      files.map(async (file) => {
-        if (file.size > MAX_FILE_SIZE) {
-          return {
-            id: crypto.randomUUID(),
-            filename: file.name,
-            extension: file.name.split(".").pop()?.toLowerCase() || "",
-            text: "",
-            error: `File '${file.name}' terlalu besar (${(file.size / 1024 / 1024).toFixed(1)}MB). Maksimum 20MB.`,
-            size: file.size,
-          };
-        }
-        const buffer = Buffer.from(await file.arrayBuffer());
-        return processFile(buffer, file.name);
-      })
-    );
+    // Process files sequentially to avoid memory spikes from parallel large buffers
+    const results = [];
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        results.push({
+          id: crypto.randomUUID(),
+          filename: file.name,
+          extension: file.name.split(".").pop()?.toLowerCase() || "",
+          text: "",
+          error: `File '${file.name}' terlalu besar (${(file.size / 1024 / 1024).toFixed(1)}MB). Maksimum 20MB.`,
+          size: file.size,
+        });
+        continue;
+      }
+      const buffer = Buffer.from(await file.arrayBuffer());
+      results.push(await processFile(buffer, file.name));
+    }
 
     return NextResponse.json({ files: results });
   } catch (e: unknown) {
